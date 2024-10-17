@@ -158,6 +158,9 @@ class Stepper:
     steps = 0
     # Señal llamada cuando hemos terminado nuestros pasos objetivo
     on_steps_end = []
+    
+    # Señal llamada cuando se realiza un paso en el stepper
+    on_step = []
 
     ready = False
 
@@ -205,7 +208,23 @@ class Stepper:
         self.arduino.send_payload(init_payload)
 
         self.arduino.on_received_payload.append(
-            self.__on_arduino_received_payload)
+            self.__on_arduino_received_payload
+        )
+    
+    def configVelocities(self, _steps_per_rev: int, _min_step_time: int, _max_step_time: int):
+        steps_per_rev = str(_steps_per_rev).zfill(5)
+        min_step_time = str(_min_step_time).zfill(4)
+        max_step_time = str(_max_step_time).zfill(4)
+        
+        config_payload = f"M:{self.__arduino_id}:{steps_per_rev}:{min_step_time}:{max_step_time};"
+        self.arduino.send_payload(config_payload)
+    
+    def setVelocity(self, _velocity: int):
+        velocity = str(_velocity).zfill(3)
+        
+        velocity_payload = f"M:{self.__arduino_id}:{velocity};"
+        print(velocity_payload)
+        self.arduino.send_payload(velocity_payload)
 
     def step(self, steps=1):
         clockwise = steps > 0
@@ -264,19 +283,24 @@ class Stepper:
         pass  # self.ready = False
 
     def __on_arduino_received_payload(self, payload):
-        if not (payload[0] == "M"):
-            return
-        if not (payload[2] == str(self.__arduino_id)):
-            return
+        if not (payload[0] == "M"): return
+        if not (payload[2] == str(self.__arduino_id)): return
 
         # Señal de fin de pasos
-        if (payload[4] == "E"):
+        if (len(payload) == 5 and payload[4] == "E"):
             self.__on_steps_end()
+        
+        else:
+            pass
 
     def __on_steps_end(self):
         self.__check_disable()
 
         for cll in self.on_steps_end:
+            cll()
+
+    def __on_step(self):
+        for cll in self.on_step:
             cll()
 
     def __check_disable(self):

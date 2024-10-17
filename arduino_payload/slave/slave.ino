@@ -171,7 +171,7 @@ void attachStepper(char charId, String pines) {
   int dirPin = pines.substring(3, 5).toInt();
 
   steppers[id].onFinished += stepperFinished;
-  steppers[id].onStep += stepperFinished;
+  steppers[id].onStep += stepperStep;
   steppers[id].setId(id);
   steppers[id].attach(stepPin, dirPin);
 }

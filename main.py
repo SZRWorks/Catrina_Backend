@@ -24,7 +24,9 @@ class LogicThread():
 
         # Inicializar logica de funcionamiento
         self.test_stepper = Stepper(self.arduino, 2, 3, -1, -1)
+        self.test_stepper.configVelocities(400, 600, 9000)
         
+        self.test_stepper.setVelocity(100)
         self.test_stepper.step(400)
         
     

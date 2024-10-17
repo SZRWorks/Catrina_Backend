@@ -54,7 +54,7 @@ public:
     minStepTime = _minStepTime;
     maxStepTime = _maxStepTime;
 
-     // Configurado por defecto a velocidad maxima
+    // Configurado por defecto a velocidad maxima
     setVelocity(100);
   }
 
@@ -118,7 +118,7 @@ public:
       }
 
       actualSteps++;
-      onStep(this, id);
+      //onStep(this, id);
 
       onHighStep = true;
       digitalWrite(stepPin, 1);
