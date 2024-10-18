@@ -7,8 +7,13 @@ private:
   int stepPin;
   int dirPin;
 
+  const float stepEventRate = 10;  //Cantidad de veces por segundo que notificaremos los pasos realizados por el motor
+  const long stepEventPerTime = (1.0 / stepEventRate) * 1000000;
+  long stepEventTime = 0;
+  int elapsedSteps = 0;
+
   long int stepTime = 600;  // Tiempo por paso en microsegundos
-  long stepsPerRev = 4096;   // Pasos para una vuelta completa
+  long stepsPerRev = 4096;  // Pasos para una vuelta completa
 
   // Configuracion de velocidades
   long minStepTime = 600;
@@ -31,8 +36,8 @@ public:
   typedef EventDelegate<Stepper, int> finishedEvent;
   EventSource<Stepper, int> onFinished;
 
-  typedef EventDelegate<Stepper, int> stepedEvent;
-  EventSource<Stepper, int> onStep;
+  typedef EventDelegate<Stepper, String> stepedEvent;
+  EventSource<Stepper, String> onStep;
 
   bool attached = false;
 
@@ -74,7 +79,7 @@ public:
   // va de 0 a 100
   void setVelocity(float velocity) {
     long range = (maxStepTime - minStepTime);
-    stepTime = maxStepTime - (range * (velocity/100.0));
+    stepTime = maxStepTime - (range * (velocity / 100.0));
   }
 
   void interrupt() {
@@ -97,15 +102,34 @@ public:
 
   // deltaTime medido en microsegundos
   void update(int deltaTime) {
+    // Avanzar los pasos
+    executeSteps(deltaTime);
+
+    stepEventTime += deltaTime;
+    bool stepEventTimeReached = stepEventTime >= stepEventPerTime;
+    if (!stepEventTimeReached) { return; }  // Evitar que la variable de tiempo crezca indefinidamente
+
+    stepEventTime = 0;
+    sendElapsedSteps();
+  }
+
+  void sendElapsedSteps() {
+    if (elapsedSteps <= 0) { return; }
+
+    onStep(this, String(id) + String(elapsedSteps));
+    elapsedSteps = 0;
+  }
+
+  void executeSteps(int deltaTime) {
     if (targetSteps < 0) { return; }
 
     // Si alcanzamos el objetivo de pasos, informar de ello y terminar
     if (actualSteps >= targetSteps) {
+      sendElapsedSteps();
       finished();
       return;
     }
 
-    // Avanzar los pasos
     stepTimer += deltaTime;
     if (stepTimer >= stepTime) {
       stepTimer = 0;
@@ -118,8 +142,7 @@ public:
       }
 
       actualSteps++;
-      //onStep(this, id);
-
+      elapsedSteps++;
       onHighStep = true;
       digitalWrite(stepPin, 1);
     }

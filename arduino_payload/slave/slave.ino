@@ -12,6 +12,7 @@
 // M:0:E; - Interrumpir los pasos del stepper 0 o El stepper 0 ha terminado su trabajo 
 // M:0:00400:0600:2000; - Configurar el stepper a 400 pasos por rev, con un tiempo de 600 microsegundos por rev, y un tiempo maximo de 2000 microsegundos por rev.
 // M:0:100; - Aplicar velocidad maxima al stepper 0
+// 010; - El stepper 0 ha realizado 10 pasos (La simplicidad del payload tiene como objetivo ahorrar ancho de banda) (el largo del numero de pasos puede variar)
 
 
 String payload = "";
@@ -24,7 +25,7 @@ Stepper steppers[5];
 
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
 }
 
 
@@ -210,9 +211,9 @@ void stepperInterrupt(char charId) {
   steppers[id].interrupt();
 }
 
-void stepperStep(Stepper* sender, int id) {
+void stepperStep(Stepper* sender, String data) {
   //Enviar señal por puerto serial
-  Serial.println("M:" + String(id));
+  Serial.println(data);
 }
 
 // Lamada cuando un stepper ha terminado sus pasos objetivo
