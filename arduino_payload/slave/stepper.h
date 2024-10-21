@@ -7,7 +7,7 @@ private:
   int stepPin;
   int dirPin;
 
-  const float stepEventRate = 10;  //Cantidad de veces por segundo que notificaremos los pasos realizados por el motor
+  const float stepEventRate = 8;  //Cantidad de veces por segundo que notificaremos los pasos realizados por el motor
   const long stepEventPerTime = (1.0 / stepEventRate) * 1000000;
   long stepEventTime = 0;
   int elapsedSteps = 0;
@@ -68,11 +68,15 @@ public:
     if (targetSteps < 0) { targetSteps = 0; }
     //actualSteps = 0;
     targetSteps += stepsNum;
+    Serial.print("targetSteps: ");
+    Serial.println(targetSteps);
 
     // Aplicar direccion
     int _dir = LOW;
     if (dirClockwise) { _dir = HIGH; }
     digitalWrite(dirPin, _dir);
+
+    targetStepsClockwise = dirClockwise;
   }
 
   // A que velocidad correra el motor dentro del rango de tiempo por paso
@@ -84,12 +88,12 @@ public:
 
   void interrupt() {
     finished();
-
-    Serial.println("INTERRUPT");
   }
 
   // Llamada cuando el stepper ha llegado a su numero de pasos objetivo
   void finished() {
+    sendElapsedSteps();
+
     // Apagar salidas para evitar falsos
     digitalWrite(stepPin, 0);
     digitalWrite(dirPin, 0);
@@ -116,7 +120,9 @@ public:
   void sendElapsedSteps() {
     if (elapsedSteps <= 0) { return; }
 
-    onStep(this, String(id) + String(elapsedSteps));
+    int elapsed = elapsedSteps;
+    if (!targetStepsClockwise) { elapsed = -elapsedSteps; }
+    onStep(this, String(id) + String(elapsed));
     elapsedSteps = 0;
   }
 
@@ -125,7 +131,6 @@ public:
 
     // Si alcanzamos el objetivo de pasos, informar de ello y terminar
     if (actualSteps >= targetSteps) {
-      sendElapsedSteps();
       finished();
       return;
     }
@@ -145,125 +150,6 @@ public:
       elapsedSteps++;
       onHighStep = true;
       digitalWrite(stepPin, 1);
-    }
-  }
-};
-
-
-
-
-
-class Stepper4 {
-private:
-  int in1;
-  int in2;
-  int in3;
-  int in4;
-
-  const int numSteps = 8;
-  const int stepsLookup[8] = { B1000, B1100, B0100, B0110, B0010, B0011, B0001, B1001 };
-
-  const int stepTime = 1200;     // Tiempo por paso en microsegundos
-  const int stepsPerRev = 4096;  // Pasos para una vuelta completa
-
-  long int stepCounter = 0;
-  int stepTimer = 0;
-
-  /// Repetidor de steps
-  bool targetStepsClockwise = true;
-  long int targetSteps = -1;
-  long int actualSteps = 0;
-
-  int id = 0;
-
-
-  void setOutput(int step) {
-    step = step % numSteps;
-    digitalWrite(in1, bitRead(stepsLookup[step], 0));
-    digitalWrite(in2, bitRead(stepsLookup[step], 1));
-    digitalWrite(in3, bitRead(stepsLookup[step], 2));
-    digitalWrite(in4, bitRead(stepsLookup[step], 3));
-  }
-
-  void clockwise() {
-    stepCounter--;
-    if (stepCounter < 0) stepCounter = numSteps - 1;
-    setOutput(stepCounter);
-  }
-
-  void counterclockwise() {
-    stepCounter++;
-    stepCounter = stepCounter % numSteps;
-    setOutput(stepCounter);
-  }
-
-
-
-public:
-  typedef EventDelegate<Stepper4, int> finishedEvent;
-  EventSource<Stepper4, int> onFinished;
-  bool attached = false;
-
-  void setId(int _id) {
-    id = _id;
-  }
-
-  void attach(int _in1, int _in2, int _in3, int _in4) {
-    in1 = _in1;
-    in2 = _in2;
-    in3 = _in3;
-    in4 = _in4;
-
-    pinMode(in1, OUTPUT);
-    pinMode(in2, OUTPUT);
-    pinMode(in3, OUTPUT);
-    pinMode(in4, OUTPUT);
-  }
-
-  // Realizar un simple paso
-  void step(bool dirClockwise = true) {
-    if (dirClockwise) clockwise();
-    else counterclockwise();
-  }
-
-  // Realizar un numero de pasos objetivo
-  void doSteps(int stepsNum, bool dirClockwise = true) {
-    if (targetSteps < 0) { targetSteps = 0; }
-    //actualSteps = 0;
-    targetSteps += stepsNum;
-    targetStepsClockwise = dirClockwise;
-  }
-
-  // Llamada cuando el stepper ha llegado a su numero de pasos objetivo
-  void finished() {
-    // Apagar bobinas para evitar sobrecalentamiento
-    digitalWrite(in1, 0);
-    digitalWrite(in2, 0);
-    digitalWrite(in3, 0);
-    digitalWrite(in4, 0);
-
-    targetSteps = -1;
-    actualSteps = 0;
-
-    onFinished(this, id);
-  }
-
-  // deltaTime medido en microsegundos
-  void update(int deltaTime) {
-    if (targetSteps < 0) { return; }
-
-    // Si alcanzamos el objetivo de pasos, no hacer nada
-    if (actualSteps >= targetSteps) {
-      finished();
-      return;
-    }
-
-    // Realizar los pasos objetivo
-    stepTimer += deltaTime;
-    if (stepTimer >= stepTime) {
-      actualSteps++;
-      stepTimer = 0;
-      step(targetStepsClockwise);
     }
   }
 };

@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO
 from main import LogicThread
+from web_socket import Socket
 from config import GlobalConfig
 import random
 import json
@@ -10,11 +11,11 @@ import json
 app = Flask(__name__)
 
 app.config['SECRET_KEY'] = 'MaxEsPuto.secret'
-socket = SocketIO(app, cors_allowed_origins="*")
+webSocket = SocketIO(app, cors_allowed_origins="*")
 
 # Hilo logico principal
-logic_app = LogicThread()
-
+logic_app: LogicThread = LogicThread()
+socket: Socket = Socket(webSocket);
 
 # Usuarios admin
 admin_users = GlobalConfig.admin_users
@@ -25,17 +26,17 @@ user_info = {}  # {"Username": [#pedidos, isAdmin], ...},
 session_secret = random.randint(0, 10**10)
 
 
-@socket.on("connect")
+@webSocket.on("connect")
 def on_socket_connection():
     pass
 
 
-@socket.on("disconnect")
+@webSocket.on("disconnect")
 def on_socket_disconnection():
     pass
 
 
-@socket.on_error()
+@webSocket.on_error()
 def chat_error_handler(e):
     print('An error has occurred: ' + str(e))
 
@@ -44,6 +45,17 @@ def chat_error_handler(e):
 def home():
     return '¿Que haces aqui wey? que pedo'
 
+
+@app.route('/testing', methods=['POST'])
+def testSteps():
+    # Obtener la data del request
+    data = request.get_json()
+
+    targetPosition = data["targetPosition"]
+
+    logic_app.setToTarget(int(targetPosition))
+    
+    return {'xd':True}
 
 @app.route('/system/abort', methods=['POST'])
 def abort_system():
