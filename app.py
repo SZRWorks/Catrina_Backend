@@ -46,17 +46,6 @@ def home():
     return '¿Que haces aqui wey? que pedo'
 
 
-@app.route('/testing', methods=['POST'])
-def testSteps():
-    # Obtener la data del request
-    data = request.get_json()
-
-    targetPosition = data["targetPosition"]
-
-    logic_app.setToTarget(int(targetPosition))
-    
-    return {'xd':True}
-
 @app.route('/system/abort', methods=['POST'])
 def abort_system():
     # Obtener la data del request

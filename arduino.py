@@ -90,7 +90,7 @@ class Arduino():
 
         payload = f"{self.I2C_id}P:{pin}:S;"
 
-        print(payload)
+        if (GlobalConfig.arduino_debug_payloads_level > 0): print(payload)
         self.serial.write(bytes(payload, encoding='utf-8'))
 
     # Aplica un angulo al servo dado
@@ -99,7 +99,7 @@ class Arduino():
         angle = str(angle).zfill(4)
 
         payload = f"{self.I2C_id}S:{pin}:{angle};"
-        print(payload)
+        if (GlobalConfig.arduino_debug_payloads_level > 0): print(payload)
         self.serial.write(bytes(payload, encoding='utf-8'))
 
     # Enviar un payload cualquiersea
@@ -154,12 +154,13 @@ class Servo:
     """
     __id = 0
     __angle = 0
+    __arduino: Arduino = None
 
-    def __init__(self, arduino, pwmPin, startAngle=0):
+    def __init__(self, arduino: Arduino, pwmPin, startAngle=0):
         self.__arduino = arduino
 
         # Obtener ID del servo
-        self.__id = pwmPin
+        self.__id = (self.__arduino.I2C_id, pwmPin)
 
         # Guardar el servo para futuras referencias
         if (self.__id in servos):
@@ -204,15 +205,13 @@ class Stepper:
 
     ready: bool = False
 
-    __origin_switch = None
-    __end_switch = None
-
     __last_target_steps = 0
 
+    arduino: Arduino = None
     __arduino_id = 0
     __id = 0
 
-    def __init__(self, arduino: Arduino, stepPin: int, dirPin: int, origin_switch_pin: int, end_switch_pin: int):
+    def __init__(self, arduino: Arduino, stepPin: int, dirPin: int, _steps_per_rev: int, _min_step_time: int, _max_step_time: int):
         self.arduino = arduino
 
         stepPin = str(stepPin).zfill(2)
@@ -221,22 +220,9 @@ class Stepper:
         # Configurar pin Enable
         self.arduino.pin_mode(self.__enable_pin, True)
 
-        # Finales de carrera
-        self.__origin_switch = Switch(origin_switch_pin)
-        self.__end_switch = Switch(end_switch_pin)
-
-        # Señales de finales de carrera
-        self.__origin_switch.on_pressed = [self.__on_origin_reached]
-        self.__end_switch.on_pressed = [self.__on_end_reached]
-
         # Obtener ID del motor
-        self.__id = (stepPin, dirPin)
+        self.__id = (self.arduino.I2C_id, stepPin, dirPin)
         self.__arduino_id = len(steppers)
-
-        # Moverse indefinidamente al inicio hasta que lo alcancemos
-        if (not self.__origin_switch.start_pressed) and (not GlobalConfig.debug_mode):
-            print(str(self.__arduino_id) + " : " + "Go to origin")
-            self.step(-10000)
 
         # Guardar el motor para futuras referencias
         if (self.__id in steppers):
@@ -252,6 +238,8 @@ class Stepper:
         self.arduino.on_received_payload.append(
             self.__on_arduino_received_payload
         )
+
+        self.configVelocities(_steps_per_rev, _min_step_time, _max_step_time)
 
     def configVelocities(self, _steps_per_rev: int, _min_step_time: int, _max_step_time: int):
         steps_per_rev = str(_steps_per_rev).zfill(5)
@@ -298,7 +286,7 @@ class Stepper:
         if not self in steppers_working:
             steppers_working.append(self)
 
-        #self.arduino.digital_write(self.__enable_pin, False)
+        # self.arduino.digital_write(self.__enable_pin, False)
 
         # Convertir pasos a string con formato para payload
         steps = str(int(steps)).zfill(5)
@@ -306,21 +294,17 @@ class Stepper:
 
         # Decirle al arduino el numero de pasos a realizar
         payload = f"M:{self.__arduino_id}:{steps}:{clockwise};"
-        print(payload)
         self.arduino.send_payload(payload)
 
     def goTo(self, target: int, interrupt_actual: bool = True):
         # if (self.working):
-        
+
         self.__last_target_steps = target
         if (self.working):
             self.interrupt()
             return
 
-        print("Target: ", target)
-
         distanceSteps: int = int(target - self.steps)
-        print("Distance to target: ", distanceSteps)
         self.step(distanceSteps)
 
     def disable(self):
@@ -373,8 +357,6 @@ class Stepper:
     def __on_step(self, steps: int):
         self.steps += steps
         self.working = True
-
-        print(self.steps)
 
         for cll in self.on_step:
             cll(self, steps)

@@ -3,6 +3,7 @@ from raspberry import Raspberry, Switch
 from config import GlobalConfig
 from threading import Timer
 from web_socket import Socket
+from states_handler import StatesHandler
 import time
 import math
 
@@ -13,41 +14,15 @@ class LogicThread():
     comunicada a cada una de las partes
     """
 
-    master: Arduino = None
-
-    goint = 0
-
-    test_steppers: list = []
     def __init__(self):
-        # Comenzar comunicacion con arduino RASP: /dev/ttyUSB0
         self.master = Arduino(
             GlobalConfig.arduino_serial_port,
             GlobalConfig.arduino_serial_baud_rate
         )
+
+        self.states_handler = StatesHandler(self.master)
+        self.states_handler.apply_single_state({'id': 'Head/X', 'value': 0, 'realValue':0})
         
-        self.slave1 = ArduinoSlave(self.master, 1)
-
-        # Comenzar raspberry
-        Raspberry.init()
-        
-        self.max_steps = 400 * 10
-        self.goint = self.max_steps
-        for i in range(1):
-            #print(i)
-            # Inicializar logica de funcionamiento
-            self.test_steppers.append(Stepper(self.slave1, (2*i)+2, (2*i)+3, -1, -1))
-            self.test_steppers[i].configVelocities(400, 500, 9999)
-
-            self.test_steppers[i].setVelocity(100)
-            self.test_steppers[i].on_step = [self.step]
-            
-    
-    def setToTarget(self, position: int):
-        self.test_steppers[0].goTo(self.max_steps * (position/100))
-    
-    def step(self, stepper: Stepper, steps: int):
-        Socket.emit('steps', float(stepper.steps)/float(self.max_steps))
-
 
     def abort_system(self):
         """
@@ -62,13 +37,6 @@ class LogicThread():
 
         exit()
         quit()
-
-
-
-
-
-
-
 
 
 """
