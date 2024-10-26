@@ -8,7 +8,6 @@ class GlobalConfig:
     # WINDOWS DEBUGGING
     # Permite compatibilidad de ejecucion con sistemas windows
     debug_mode = config("WINDOWS_DEBUGING").lower() == "true"
-    print(debug_mode)
 
     admin_users = {
         "zau1": "231551244",
