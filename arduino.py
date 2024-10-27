@@ -296,7 +296,7 @@ class Stepper:
         payload = f"M:{self.__arduino_id}:{steps}:{clockwise};"
         self.arduino.send_payload(payload)
 
-    def goTo(self, target: int, interrupt_actual: bool = True):
+    def go_to(self, target: int, interrupt_actual: bool = True):
         # if (self.working):
 
         self.__last_target_steps = target
@@ -363,7 +363,7 @@ class Stepper:
 
     def __ensure_target(self):
         if not (self.steps == self.__last_target_steps):
-            self.goTo(self.__last_target_steps, False)
+            self.go_to(self.__last_target_steps, False)
 
     def __check_disable(self):
         pass

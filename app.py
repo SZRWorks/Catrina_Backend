@@ -14,8 +14,8 @@ app.config['SECRET_KEY'] = 'MaxEsPuto.secret'
 webSocket = SocketIO(app, cors_allowed_origins="*")
 
 # Hilo logico principal
-logic_app: LogicThread = LogicThread()
 socket: Socket = Socket(webSocket);
+logic_app: LogicThread = LogicThread();
 
 # Usuarios admin
 admin_users = GlobalConfig.admin_users
@@ -45,6 +45,9 @@ def chat_error_handler(e):
 def home():
     return '¿Que haces aqui wey? que pedo'
 
+@app.route('/states', methods=['GET'])
+def get_states():
+    return logic_app.states_handler.get_formated_states()
 
 @app.route('/system/abort', methods=['POST'])
 def abort_system():

@@ -21,7 +21,8 @@ class LogicThread():
         )
 
         self.states_handler = StatesHandler(self.master)
-        self.states_handler.apply_single_state({'id': 'Head/X', 'value': 0, 'realValue':0})
+        Socket.on('stateUpdated', self.states_handler.apply_single_state);
+        #self.states_handler.apply_single_state({'id': 'Head/X', 'value': 0, 'realValue':0})
         
 
     def abort_system(self):

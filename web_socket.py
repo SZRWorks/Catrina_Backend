@@ -15,6 +15,10 @@ class Socket:
     @staticmethod
     def emit(event: str, value):
         Socket.socket.emit(event, value)
+        
+    @staticmethod
+    def on(event: str, callback):
+        Socket.socket.on_event(event, callback)
 
     def __init__(self, socket: SocketIO):
         Socket.socket = socket;

@@ -1,5 +1,7 @@
 from arduino import Arduino, ArduinoSlave, Stepper, Servo
+from web_socket import Socket
 from config import GeneralTweaker
+
 
 
 class StatesHandler():
@@ -7,21 +9,76 @@ class StatesHandler():
     Encargado de la gestion de el estado de cada stepper y servomotor 
     en el sistema
     """
-    components = {}
+    __states = {}
+    
+    # True cuando el handler está ejecutando un frame de animacion
+    executing_frame = False;
+
 
     def __init__(self, master: Arduino):
         self.__parts_initializer = PartsInitializer(master)
 
-        # configurar las partes
+        # configurar los estados por defecto
         for part_config in self.__parts_initializer.parts:
-            self.components[part_config] = self.__parts_initializer.parts[part_config]['component']
+            self.__states[part_config] = {
+                'value': 0,
+                'realValue': 0
+            };
+            #self.components[part_config] = self.__parts_initializer.parts[part_config]['component']
+    
+    def get_formated_states(self):
+        formated_states = []
+        for state in self.__states:
+            formated_states.append({
+                'id': state,
+                'value': self.__states[state]['value'],
+                'realValue': self.__states[state]['realValue'],
+            })
+        
+        return formated_states
 
     def apply_single_state(self, state):
-        component = self.components[state['id']]
+        part_info = self.__parts_initializer.parts[state['id']];
+        new_value = state['value'];
+        component = part_info['component'];
+        low_limit = part_info['low_limit'];
+        high_limit = part_info['high_limit'];
+        
+        target = ((float(new_value)/100.0) * (high_limit - low_limit)) + low_limit
         
         isStepper: bool = type(component) is Stepper
         if (isStepper):
-            pass
+            component: Stepper = component
+            # Escucha cuando este stepper este dando algun paso
+            if not self.__local_stepper_step in component.on_step:
+                component.on_step.append(self.__local_stepper_step)
+            
+            component.go_to(target)
+            return;
+        
+        component: Servo = component
+        component.angle = target
+        
+    
+    def __local_stepper_step(self, part_id: str, stepper: Stepper, steps: int):
+        part_info = self.__parts_initializer.parts[state['id']];
+        low_limit = part_info['low_limit'];
+        high_limit = part_info['high_limit'];
+        
+        value_percentage = stepper.steps/(high_limit - low_limit);
+        self.__states[part_id] = {
+            'value': self.__states[part_id]['value'],
+            'realValue': 0 if (value_percentage < 0) else (100 if (value_percentage > 100) else value_percentage)
+        }
+        self.__state_updated(self.__states[part_id])
+    
+    def __state_updated(state: dict):
+        Socket.emit('stateUpdated', {
+            'id': part_id,
+            'value': state['value'],
+            'realValue': state['realValue']
+        })
+    
     
 
 
@@ -45,7 +102,7 @@ class PartsInitializer():
                     _max_step_time=GeneralTweaker.TB6600["max_step_time"]
                 ),
                 'low_limit': 0,
-                'lhigh_limit': 7500
+                'high_limit': 7500
             },
             'Head/Y': {
                 'component': Stepper(
@@ -57,7 +114,7 @@ class PartsInitializer():
                     _max_step_time=GeneralTweaker.TB6600["max_step_time"]
                 ),
                 'low_limit': 0,
-                'lhigh_limit': 15000
+                'high_limit': 15000
             },
             'Head/Z': {
                 'component': Stepper(
@@ -69,7 +126,7 @@ class PartsInitializer():
                     _max_step_time=GeneralTweaker.TB6600["max_step_time"]
                 ),
                 'low_limit': 0,
-                'lhigh_limit': 7500
+                'high_limit': 7500
             },
 
 
@@ -84,7 +141,7 @@ class PartsInitializer():
                     _max_step_time=GeneralTweaker.DM556["max_step_time"]
                 ),
                 'low_limit': 0,
-                'lhigh_limit': 7500
+                'high_limit': 7500
             },
             'LeftArm/Muñeca': {
                 'component': Stepper(
@@ -166,7 +223,7 @@ class PartsInitializer():
                     _max_step_time=GeneralTweaker.DM556["max_step_time"]
                 ),
                 'low_limit': 0,
-                'lhigh_limit': 7500
+                'high_limit': 7500
             },
             'RightArm/Muñeca': {
                 'component': Stepper(
