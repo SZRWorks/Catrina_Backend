@@ -68,8 +68,6 @@ public:
     if (targetSteps < 0) { targetSteps = 0; }
     //actualSteps = 0;
     targetSteps += stepsNum;
-    Serial.print("targetSteps: ");
-    Serial.println(targetSteps);
 
     // Aplicar direccion
     int _dir = LOW;

@@ -4,7 +4,7 @@
 #include <ArduinoQueue.h>
 
 
-#define I2C_ID 0      // ID 0 idenficia a un arduino maestro
+#define I2C_ID 2      // ID 0 idenficia a un arduino maestro
 #define MAX_SLAVES 2  // Reducir el numero de esclavos podria ayudar al rendimiento general
 
 // Ejemplo payloads
@@ -26,7 +26,8 @@ String payload = "";
 int payloadLength = 0;
 bool payloadReady = false;
 
-int slaveBufferSize = 30;
+const int slaveRequestBytes = 11;
+const int slaveBufferSize = 30;
 ArduinoQueue<String> slavePayloadsBuffer(slaveBufferSize);
 
 const float slavePayloadRequestRate = 16;  //Cantidad de veces por segundo que pediremos a los esclavos presentar payloads
@@ -331,13 +332,13 @@ void getSlavePayload(int deltaTime) {
   slaveRequestTime = 0;
 
   for (int i = 1; i <= MAX_SLAVES; i++) {
-    if (Wire.requestFrom(i, 8) <= 0) { continue; }
-    char _payload[8];
-    Wire.readBytes(_payload, 8);
+    if (Wire.requestFrom(i, slaveRequestBytes) <= 0) { continue; }
+    char _payload[slaveRequestBytes];
+    Wire.readBytes(_payload, slaveRequestBytes);
 
     String finalPayload = "";
     bool badPayload = true;
-    for (int ci = 0; ci < 8; ci++) {
+    for (int ci = 0; ci < slaveRequestBytes; ci++) {
       char readChar = _payload[ci];
 
       // Evitar ingresar espacios en blanco al payload
