@@ -5,7 +5,7 @@
 
 
 #define I2C_ID 0      // ID 0 idenficia a un arduino maestro
-#define MAX_SLAVES 3  // Reducir el numero de esclavos podria ayudar al rendimiento general
+#define MAX_SLAVES 2  // Reducir el numero de esclavos podria ayudar al rendimiento general
 
 // Ejemplo payloads
 // 1R:A0; - Leer puerto A0 del arduino esclavo 1
@@ -30,7 +30,7 @@ int slaveBufferSize = 30;
 ArduinoQueue<String> slavePayloadsBuffer(slaveBufferSize);
 
 const float slavePayloadRequestRate = 16;  //Cantidad de veces por segundo que pediremos a los esclavos presentar payloads
-const long slaveRequestPerTime = (1.0 / slavePayloadRequestRate) * 1000000;
+const long slaveRequestPerTime = (1.0 / slavePayloadRequestRate) * 1000000UL;
 long slaveRequestTime = 0;
 
 
@@ -272,7 +272,7 @@ void stepperFinished(Stepper* sender, int id) {
 
 void sendPayload(String _payload) {
   if (I2C_ID == 0) {
-    _payload += String(I2C_ID);
+    _payload = String(I2C_ID) + _payload;
     Serial.println(_payload);
     return;
   }
