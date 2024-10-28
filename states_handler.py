@@ -19,11 +19,18 @@ class StatesHandler():
         self.__parts_initializer = PartsInitializer(master)
 
         # configurar los estados por defecto
-        for part_config in self.__parts_initializer.parts:
-            self.__states[part_config] = {
+        for part_id in self.__parts_initializer.parts:
+            part_info = self.__parts_initializer.parts[part_id];
+            component = part_info['component'];
+            self.__states[part_id] = {
                 'value': 0,
                 'realValue': 0
             };
+            
+            isStepper: bool = type(component) is Stepper
+            if (isStepper):
+                component: Stepper = component
+                component.on_step.append(lambda stepper, steps, _part_id=part_id: self.__local_stepper_step(_part_id, stepper, steps))
             #self.components[part_config] = self.__parts_initializer.parts[part_config]['component']
     
     def get_formated_states(self):
@@ -44,15 +51,12 @@ class StatesHandler():
         low_limit = part_info['low_limit'];
         high_limit = part_info['high_limit'];
         
-        target = ((float(new_value)/100.0) * (high_limit - low_limit)) + low_limit
+        target: int = int(((float(new_value)/100.0) * (high_limit - low_limit)) + low_limit)
+        self.__states[state['id']]['value'] = new_value
         
         isStepper: bool = type(component) is Stepper
         if (isStepper):
             component: Stepper = component
-            # Escucha cuando este stepper este dando algun paso
-            if not self.__local_stepper_step in component.on_step:
-                component.on_step.append(self.__local_stepper_step)
-            
             component.go_to(target)
             return;
         
@@ -61,18 +65,18 @@ class StatesHandler():
         
     
     def __local_stepper_step(self, part_id: str, stepper: Stepper, steps: int):
-        part_info = self.__parts_initializer.parts[state['id']];
+        part_info = self.__parts_initializer.parts[part_id];
         low_limit = part_info['low_limit'];
         high_limit = part_info['high_limit'];
         
-        value_percentage = stepper.steps/(high_limit - low_limit);
+        value_percentage = (stepper.steps/(high_limit - low_limit)) * 100;
         self.__states[part_id] = {
             'value': self.__states[part_id]['value'],
             'realValue': 0 if (value_percentage < 0) else (100 if (value_percentage > 100) else value_percentage)
         }
-        self.__state_updated(self.__states[part_id])
+        self.__state_updated(part_id, self.__states[part_id])
     
-    def __state_updated(state: dict):
+    def __state_updated(self, part_id: str, state: dict):
         Socket.emit('stateUpdated', {
             'id': part_id,
             'value': state['value'],
@@ -80,6 +84,20 @@ class StatesHandler():
         })
     
     
+class PartState():
+    id: str = ""
+    value: int = 0
+    real_value: int = 0 
+    
+    def __init__(self, args: dict):
+        self.id: str = args['id']
+        self.value: int = args['value']
+        self.real_value: int = args['realValue']
+        
+        self.dict_data = args
+    
+    def get_data_dict(self):
+        return self.dict_data
 
 
 class PartsInitializer():
@@ -292,3 +310,7 @@ class PartsInitializer():
                 'high_limit': 180
             },
         }
+        
+        """
+        
+        """

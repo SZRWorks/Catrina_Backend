@@ -11,7 +11,8 @@ import json
 app = Flask(__name__)
 
 app.config['SECRET_KEY'] = 'MaxEsPuto.secret'
-webSocket = SocketIO(app, cors_allowed_origins="*")
+app.config['DEBUG'] = GlobalConfig.log_socket
+webSocket = SocketIO(app, cors_allowed_origins="*", logger=GlobalConfig.log_socket)
 
 # Hilo logico principal
 socket: Socket = Socket(webSocket);
@@ -48,6 +49,43 @@ def home():
 @app.route('/states', methods=['GET'])
 def get_states():
     return logic_app.states_handler.get_formated_states()
+
+
+
+@app.route('/animations', methods=['POST'])
+def save_animation():
+    # Obtener la data del request
+    animation = request.get_json()
+    
+    return logic_app.animator.save_animation(animation);
+
+@app.route('/animations', methods=['PUT'])
+def update_animation():
+    # Obtener la data del request
+    data = request.get_json()
+
+@app.route('/animations/<id>', methods=['DELETE'])
+def delete_animation(id: int):
+    return {'ok': logic_app.animator.delete_animation(int(id))}
+
+@app.route('/animations/<id>', methods=['GET'])
+def get_animation(id: int):
+    animation = logic_app.animator.get_animation_by_id(int(id))
+    
+    if not (animation):
+        return jsonify({
+            "success":  True,
+            "error": 404,
+            "message": "Resource not found"
+        }), 404
+    
+    return animation.get_data_dict();
+    
+@app.route('/animations', methods=['GET'])
+def get_animations():
+    return logic_app.animator.animations_to_dict(logic_app.animator.animations);
+    
+    
 
 @app.route('/system/abort', methods=['POST'])
 def abort_system():

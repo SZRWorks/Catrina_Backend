@@ -15,13 +15,20 @@ servos = {}
 
 class Arduino():
     serial: NewSerial = None
-    read_rate = 75  # Leer datos del buffer 60 veces por segundo
+    update_rate = 60  # Numero de veces por segundo en las que se comunicara con el arduino
 
     # Lista de metodos a ser llamados cuando se reciba un payload
     on_received_payload = []
+    
+    # Buffer de envio de payloads
+    payload_buffer = []
 
     # Lista de metodos a ser llamados cuando se reciba un payload (Este payload contiene el ID del arduino emisor)
     on_received_complete_payload = []
+    
+    attached_servos = 0;
+    attached_steppers = 0;
+    
 
     I2C_id: int = 0
 
@@ -53,77 +60,93 @@ class Arduino():
         pin = str(pin).zfill(2)
         pin_type = "O" if output else "I"
 
-        payload = f"{self.I2C_id}P:{pin}:{pin_type};"
-        self.serial.write(bytes(payload, encoding='utf-8'))
+        payload = f"P:{pin}:{pin_type};"
+        self.send_payload(payload)
 
-    def digital_read(self, pin):
-        pin = str(pin).zfill(2)
+    #def digital_read(self, pin):
+    #    pin = str(pin).zfill(2)
 
-        payload = f"{self.I2C_id}R:{pin};"
-        self.serial.write(bytes(payload, encoding='utf-8'))
-        return str(self.serial.readline())[7] == "1"
+    #    payload = f"R:{pin};"
+    #    self.send_payload(payload)
+    #    return str(self.serial.readline())[7] == "1"
 
     def digital_write(self, pin, high):
         pin = str(pin).zfill(2)
         value = '0255' if high else '0000'
 
-        payload = f"{self.I2C_id}W:{pin}:{value};"
-        self.serial.write(bytes(payload, encoding='utf-8'))
+        payload = f"W:{pin}:{value};"
+        self.send_payload(payload)
 
-    def analog_read(self, pin):
-        payload = f"{self.I2C_id}R:A{pin};"
-        self.serial.write(bytes(payload, encoding='utf-8'))
+    #def analog_read(self, pin):
+    #    payload = f"R:A{pin};"
+    #    self.send_payload(payload)
 
-        received_payload = str(self.serial.readline(), 'utf-8')
-        return int(received_payload.split(':')[2])
+    #    received_payload = str(self.serial.readline(), 'utf-8')
+    #    return int(received_payload.split(':')[2])
 
     def analog_write(self, pin, value):
         pin = str(pin).zfill(2)
         value = str(value).zfill(4)
 
-        payload = f"{self.I2C_id}W:{pin}:{value};"
-        self.serial.write(bytes(payload, encoding='utf-8'))
+        payload = f"W:{pin}:{value};"
+        self.send_payload(payload)
 
     # Adjunta un servo al pin digital dado
     def attach_servo(self, pin):
         pin = str(pin).zfill(2)
 
-        payload = f"{self.I2C_id}P:{pin}:S;"
-
-        if (GlobalConfig.arduino_debug_payloads_level > 0): print(payload)
-        self.serial.write(bytes(payload, encoding='utf-8'))
+        payload = f"P:{pin}:S;"
+        self.send_payload(payload)
 
     # Aplica un angulo al servo dado
     def servo_write(self, servo_pin, angle):
         pin = str(servo_pin).zfill(2)
         angle = str(angle).zfill(4)
 
-        payload = f"{self.I2C_id}S:{pin}:{angle};"
-        if (GlobalConfig.arduino_debug_payloads_level > 0): print(payload)
-        self.serial.write(bytes(payload, encoding='utf-8'))
+        payload = f"S:{pin}:{angle};"
+        self.send_payload(payload)
 
     # Enviar un payload cualquiersea
     def send_payload(self, payload):
-        self.serial.write(bytes(str(self.I2C_id) + payload, encoding='utf-8'))
+        payload = str(self.I2C_id) + payload;
+        if (GlobalConfig.arduino_debug_payloads_level > 2): print(f"Buffering[{len(self.payload_buffer)}] -> " + payload)
+        
+        self.payload_buffer.insert(0, payload);
 
     def update(self):
-        t = Timer(1/self.read_rate, self.update)
+        t = Timer(1/self.update_rate, self.update)
         t.start()
 
         if (self.serial.in_waiting > 2):
             received_payload = str(
                 self.serial.readline(), 'utf-8').strip(" ").strip("\n")
             self._trigger_received_payload(received_payload)
+        
+        if (len(self.payload_buffer) > 0):
+            payload = self.payload_buffer.pop()
+            self.serial.write(bytes(payload, encoding='utf-8'))
+            if (GlobalConfig.arduino_debug_payloads_level > 1): print(f"Sending -> " + payload)
 
     def _trigger_received_payload(self, payload):
+        if (self.I2C_id != 0): return;
+        
         if (len(payload) <= 0):
             return
 
         if (GlobalConfig.arduino_debug_payloads_level > 0):
-            print(payload)
+            print("Receiving <- " + payload)
 
         for cll in self.on_received_complete_payload:
             cll(payload)
+        
+        self.check_received_payload(payload)
+    
+    def check_received_payload(self, payload: str):
+        if not (payload[0] == str(self.I2C_id)):
+            return
+        
+        for cll in self.on_received_payload:
+            cll(payload[1:])
 
         # if (len(payload) > 0 and int(payload[0]) == 0):
         #    for cll in self.on_received_payload:
@@ -134,18 +157,14 @@ class ArduinoSlave(Arduino):
     master: Arduino = None
 
     def __init__(self, _master: Arduino, _I2C_id: int):
+        self.on_received_payload = []
+        
         self.master = _master
         self.I2C_id = _I2C_id
         self.serial = self.master.serial
 
         self.master.on_received_complete_payload.append(
             self.check_received_payload)
-
-    def check_received_payload(self, payload: str):
-        if not (payload[0] == str(self.I2C_id)):
-            return
-        for cll in self.on_received_payload:
-            cll(payload[1:])
 
 
 class Servo:
@@ -160,17 +179,19 @@ class Servo:
         self.__arduino = arduino
 
         # Obtener ID del servo
-        self.__id = (self.__arduino.I2C_id, pwmPin)
+        self.__identifier = (self.__arduino.I2C_id, pwmPin)
+        self.__id = pwmPin
+        self.__arduino.attached_servos += 1;
 
         # Guardar el servo para futuras referencias
-        if (self.__id in servos):
+        if (self.__identifier in servos):
             raise ValueError(
-                "Ya hay un servo asignado al pin " + str(self.__id))
+                "Ya hay un servo asignado al pin " + str(self.__identifier))
             quit()
-        servos[pwmPin] = self
+        servos[self.__id] = self
 
         # Settear puerto para servo en Arduino
-        self.__arduino.attach_servo(self.__id)
+        self.__arduino.attach_servo(pwmPin)
         self.__arduino.servo_write(self.__id, startAngle)
 
     @property
@@ -212,17 +233,21 @@ class Stepper:
     __id = 0
 
     def __init__(self, arduino: Arduino, stepPin: int, dirPin: int, _steps_per_rev: int, _min_step_time: int, _max_step_time: int):
+        self.on_step = []
+        self.on_steps_end = []
+        
         self.arduino = arduino
 
         stepPin = str(stepPin).zfill(2)
         dirPin = str(dirPin).zfill(2)
 
         # Configurar pin Enable
-        self.arduino.pin_mode(self.__enable_pin, True)
+        #self.arduino.pin_mode(self.__enable_pin, True)
 
         # Obtener ID del motor
         self.__id = (self.arduino.I2C_id, stepPin, dirPin)
-        self.__arduino_id = len(steppers)
+        self.__arduino_id = self.arduino.attached_steppers
+        self.arduino.attached_steppers += 1;
 
         # Guardar el motor para futuras referencias
         if (self.__id in steppers):
@@ -235,9 +260,7 @@ class Stepper:
         init_payload = f"M:{self.__arduino_id}:{stepPin}:{dirPin};"
         self.arduino.send_payload(init_payload)
 
-        self.arduino.on_received_payload.append(
-            self.__on_arduino_received_payload
-        )
+        self.arduino.on_received_payload.append(self.__on_arduino_received_payload)
 
         self.configVelocities(_steps_per_rev, _min_step_time, _max_step_time)
 
@@ -296,9 +319,7 @@ class Stepper:
         payload = f"M:{self.__arduino_id}:{steps}:{clockwise};"
         self.arduino.send_payload(payload)
 
-    def go_to(self, target: int, interrupt_actual: bool = True):
-        # if (self.working):
-
+    def go_to(self, target: int):
         self.__last_target_steps = target
         if (self.working):
             self.interrupt()
@@ -309,7 +330,8 @@ class Stepper:
 
     def disable(self):
         # if (len(steppers_working) <= 0):
-        self.arduino.digital_write(self.__enable_pin, True)
+        #self.arduino.digital_write(self.__enable_pin, True)
+        pass
 
     def interrupt(self):
         self.__check_disable()
@@ -347,6 +369,7 @@ class Stepper:
             self.__on_steps_end()
 
     def __on_steps_end(self):
+        print("STEPS ENDED: " + str(self.arduino.I2C_id) + "|" + str(self.__arduino_id))
         self.working = False
         self.__check_disable()
         self.__ensure_target()
@@ -363,7 +386,7 @@ class Stepper:
 
     def __ensure_target(self):
         if not (self.steps == self.__last_target_steps):
-            self.go_to(self.__last_target_steps, False)
+            self.go_to(self.__last_target_steps)
 
     def __check_disable(self):
         pass
