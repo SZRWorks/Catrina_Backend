@@ -1,5 +1,9 @@
+from arduino import Stepper
 from states_handler import PartState, StatesHandler
+from math_utils import MathUtils
 from config import GlobalConfig
+from web_socket import Socket
+import asyncio
 import json
 
 
@@ -58,89 +62,191 @@ class Animation():
         return self.__dict_data
     
 
-
-class Animator():
+class AnimatonsHelper():
     """
     Encargado de la gestion de animaciones
     """
     animations: Animation = []
     next_id: int = None
-    
-
-    def __init__(self, states_handler: StatesHandler):
-        self.__read_animations()
         
-        print(self.animations)
-    
-    
-    
-    
-    
-    
-    def __read_animations(self):
+    @staticmethod
+    def read_animations():
         with open(GlobalConfig.animations_file) as f:
             dat = (json.load(f))
             _animations = dat['animations']
-            self.next_id = dat['next_id']
+            AnimatonsHelper.next_id = dat['next_id']
             
             for animation in _animations:
-                self.animations.append(Animation(animation))
+                AnimatonsHelper.animations.append(Animation(animation))
     
-    
-    def save_animation(self, animation: dict):
-        if (self.get_animation_by_id(animation['id'])):
-            return self.update_animation(animation)
+    @staticmethod
+    def save_animation(animation: dict):
+        if (AnimatonsHelper.get_animation_by_id(animation['id'])):
+            return AnimatonsHelper.update_animation(animation)
         
-        animation['id'] = self.next_id
+        animation['id'] = AnimatonsHelper.next_id
         new_animation = Animation(animation)
-        self.animations.append(new_animation)
-        self.next_id += 1;
+        AnimatonsHelper.animations.append(new_animation)
+        AnimatonsHelper.next_id += 1;
         
-        self.__rewrite_file()
+        AnimatonsHelper.__rewrite_file()
         
         return new_animation.get_data_dict()
     
-    
-    def update_animation(self, animation: dict):
-        old = self.get_animation_by_id(animation['id'])
-        self.animations.remove(old)
+    @staticmethod
+    def update_animation(animation: dict):
+        old = AnimatonsHelper.get_animation_by_id(animation['id'])
+        AnimatonsHelper.animations.remove(old)
         
         new_animation = Animation(animation);
-        self.animations.append(new_animation)
+        AnimatonsHelper.animations.append(new_animation)
         
-        self.__rewrite_file()
+        AnimatonsHelper.__rewrite_file()
         
         return new_animation.get_data_dict()
     
-    
-    def delete_animation(self, animation_id: int):
-        old = self.get_animation_by_id(animation_id)
-        self.animations.remove(old)
+    @staticmethod
+    def delete_animation(animation_id: int):
+        old = AnimatonsHelper.get_animation_by_id(animation_id)
+        AnimatonsHelper.animations.remove(old)
         
-        self.__rewrite_file()
+        AnimatonsHelper.__rewrite_file()
         
         return True
         
-    
-    def __rewrite_file(self):
+    @staticmethod
+    def __rewrite_file():
         with open(GlobalConfig.animations_file, 'w') as fp:
             json.dump({
-                'animations': self.animations_to_dict(self.animations),
-                'next_id': self.next_id
+                'animations': AnimatonsHelper.animations_to_dict(AnimatonsHelper.animations),
+                'next_id': AnimatonsHelper.next_id
             }, fp)
 
-
-    def animations_to_dict(self, animations: list[Animation]):
+    @staticmethod
+    def animations_to_dict(animations: list[Animation], include_private: bool = True):
         _dict: list = []
         for animation in animations:
+            if (not include_private and not animation.is_public): continue
             _dict.append(animation.get_data_dict())
         
         return _dict
     
-    def get_animation_by_id(self, animation_id: int) -> Animation:
-        for animation in self.animations:
+    @staticmethod
+    def get_animation_by_id(animation_id: int) -> Animation:
+        for animation in AnimatonsHelper.animations:
             animation: Animation = animation
             if (animation.id == animation_id):
                 return animation
         
         return False
+    
+    
+    
+    
+
+
+class Animator():
+    playing: bool = False
+    
+    __actual_animation: Animation = None
+    __frames_queue: list[AnimationFrame] = None
+    __actual_frame: AnimationFrame = None
+    __frame_velocity_curve = None
+    
+    states_handler: StatesHandler = None
+    
+    
+    
+    def __init__(self, states_handler: StatesHandler):
+        self.states_handler = states_handler
+        self.states_handler.on_stepper_update.append(self.__handle_stepper_velocity_curve)
+        
+        # Load animations
+        AnimatonsHelper.read_animations()
+    
+    def play(self, animation_id: int):
+        print("Trying to play: ", animation_id)
+        if self.playing: return;
+        
+        animation: Animation = AnimatonsHelper.get_animation_by_id(animation_id);
+        if (not animation or animation == None):
+            print("Animation id:", animation_id, " not found")
+            return;
+        
+        for frame in animation.frames:
+            if (frame.data == None or len(frame.data) <= 0):
+                print("Some animation frames has empty data")
+                return;
+        
+        self.playing = True
+        print("PLAY!")
+        
+        self.__actual_animation = animation
+        self.__actual_frames = animation.frames.copy()
+        self.__check_next_frame();
+        
+        # notifica al fronend de los cambios
+        Socket.emit('animationStatusUpdated', {
+            'playing': True,
+            'animation_id': self.__actual_animation.id,
+            'left_frames': len(self.__actual_frames),
+            'animation_percentage': 0
+        })
+    
+    
+    async def apply_frame(self, frame: AnimationFrame, apply_delays: bool = False):
+        self.__actual_frame = frame
+        self.__frame_velocity_curve = self.__get_velocity_function(self.__actual_frame.velocity_curve)
+        
+        if (apply_delays):
+            await asyncio.sleep(frame.start_delay)
+        
+        self.states_handler.on_every_work_ended.append(lambda : asyncio.run(self.on_frame_work_ended(apply_delays)))
+        for state in self.__actual_frame.data:
+            self.states_handler.apply_single_state(state.get_data_dict());
+        
+        
+    async def on_frame_work_ended(self, apply_delays: bool = False):
+        self.states_handler.on_every_work_ended = []
+        if (apply_delays):
+            await asyncio.sleep(self.__actual_frame.end_delay)
+        
+        self.__check_next_frame();
+    
+    
+    def __check_next_frame(self):
+        if (len(self.__actual_frames) <= 0):
+            self.__animation_frames_ended()
+            return;
+        
+        asyncio.run(self.apply_frame(self.__actual_frames.pop(), True))
+    
+    def __animation_frames_ended(self):
+        self.playing = False;
+        self.__actual_animation = None
+        self.__actual_frame = None
+        self.__actual_frames = None
+        
+        # notifica al fronend de los cambios
+        Socket.emit('animationStatusUpdated', {
+            'playing': False,
+            'animation_id': -1,
+            'left_frames': 0,
+            'animation_percentage': 100
+        })
+    
+    
+    def __handle_stepper_velocity_curve(self, stepper: Stepper, elapsed_steps: int):
+        if (self.__frame_velocity_curve == None): return
+        
+        curve = self.__frame_velocity_curve(stepper.steps/stepper.last_target_steps)
+        af = self.__actual_frame;
+        vel = int(((af.max_velocity - af.min_velocity) * curve) + af.min_velocity)
+        
+        stepper.setVelocity(vel)
+    
+    
+    def __get_velocity_function(self, curve_name: str):
+        #if (curve_name == 'Soft in-out'):
+        return MathUtils.max_value
+        

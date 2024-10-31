@@ -1,5 +1,7 @@
+import asyncio
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO
+from animator import AnimationFrame, AnimatonsHelper
 from main import LogicThread
 from web_socket import Socket
 from config import GlobalConfig
@@ -17,11 +19,6 @@ webSocket = SocketIO(app, cors_allowed_origins="*", logger=GlobalConfig.log_sock
 # Hilo logico principal
 socket: Socket = Socket(webSocket);
 logic_app: LogicThread = LogicThread();
-
-# Usuarios admin
-admin_users = GlobalConfig.admin_users
-users = []
-user_info = {}  # {"Username": [#pedidos, isAdmin], ...},
 
 # Valor semi-unico que identifica a la sesion
 session_secret = random.randint(0, 10**10)
@@ -51,26 +48,32 @@ def get_states():
     return logic_app.states_handler.get_formated_states()
 
 
+@app.route('/auth', methods=['POST'])
+def auth_sequence():
+    sequence = request.get_json()
+    
+    return {'ok': GlobalConfig.admin_sequence == sequence}
 
-@app.route('/animations', methods=['POST'])
+
+@app.route('/animation', methods=['POST'])
 def save_animation():
     # Obtener la data del request
     animation = request.get_json()
     
-    return logic_app.animator.save_animation(animation);
+    return AnimatonsHelper.save_animation(animation);
 
-@app.route('/animations', methods=['PUT'])
+@app.route('/animatios', methods=['PUT'])
 def update_animation():
     # Obtener la data del request
     data = request.get_json()
 
-@app.route('/animations/<id>', methods=['DELETE'])
+@app.route('/animation/<id>', methods=['DELETE'])
 def delete_animation(id: int):
-    return {'ok': logic_app.animator.delete_animation(int(id))}
+    return {'ok': AnimatonsHelper.delete_animation(int(id))}
 
-@app.route('/animations/<id>', methods=['GET'])
+@app.route('/animation/<id>', methods=['GET'])
 def get_animation(id: int):
-    animation = logic_app.animator.get_animation_by_id(int(id))
+    animation = AnimatonsHelper.get_animation_by_id(int(id))
     
     if not (animation):
         return jsonify({
@@ -81,26 +84,30 @@ def get_animation(id: int):
     
     return animation.get_data_dict();
     
-@app.route('/animations', methods=['GET'])
-def get_animations():
-    return logic_app.animator.animations_to_dict(logic_app.animator.animations);
+@app.route('/animations/<isAdmin>', methods=['GET'])
+def get_animations(isAdmin: bool):
+    return AnimatonsHelper.animations_to_dict(AnimatonsHelper.animations, bool(int(isAdmin)));
+
+
+@app.route('/animator/frame', methods=['POST'])
+def set_frame():
+    frame = request.get_json()
+    asyncio.run(logic_app.animator.apply_frame(AnimationFrame(frame)))
+    
+    return {'ok': True}
     
     
+@app.route('/animator/play', methods=['POST'])
+def play_animation():
+    data = request.get_json()
+    logic_app.animator.play(int(data['animation_id']))
+    
+    return {'ok': True}
 
 @app.route('/system/abort', methods=['POST'])
 def abort_system():
     # Obtener la data del request
     data = request.get_json()
-
-    userName = data["name"]
-    userName = userName.lower()
-
-    if (not userName in admin_users):
-        return jsonify({
-            "success":  True,
-            "error": 403,
-            "message": "No tienes los permisos para realizar esta accion"
-        }), 403
 
     print("---- ABORTANDO OPERACIONES ----")
 

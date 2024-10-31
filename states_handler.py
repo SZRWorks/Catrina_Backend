@@ -1,4 +1,4 @@
-from arduino import Arduino, ArduinoSlave, Stepper, Servo
+from arduino import Arduino, ArduinoSlave, Stepper, Servo, steppers_working
 from web_socket import Socket
 from config import GeneralTweaker
 
@@ -11,11 +11,17 @@ class StatesHandler():
     """
     __states = {}
     
+    on_stepper_update = []
+    on_every_work_ended = []
+    
     # True cuando el handler está ejecutando un frame de animacion
-    executing_frame = False;
+    total_work_steps = 0;
+    total_work_target = 0;
+    something_working = False;
 
 
     def __init__(self, master: Arduino):
+        self.on_stepper_update = []
         self.__parts_initializer = PartsInitializer(master)
 
         # configurar los estados por defecto
@@ -31,6 +37,7 @@ class StatesHandler():
             if (isStepper):
                 component: Stepper = component
                 component.on_step.append(lambda stepper, steps, _part_id=part_id: self.__local_stepper_step(_part_id, stepper, steps))
+                component.on_steps_end.append(self.__local_stepper_ended)
             #self.components[part_config] = self.__parts_initializer.parts[part_config]['component']
     
     def get_formated_states(self):
@@ -58,16 +65,48 @@ class StatesHandler():
         if (isStepper):
             component: Stepper = component
             component.go_to(target)
+            self.total_work_target += abs(component.last_target_steps - component.steps); 
+            
             return;
         
         component: Servo = component
         component.angle = target
+    
+    
+    def __local_stepper_ended(self):
+        self.__check_work_status()
+    
+    
+    def __check_work_status(self):
+        one_working = len(steppers_working) > 0;
+    
+        # notifica al fronend de los cambios
+        Socket.emit('workStatusUpdated', {
+            'working': one_working,
+            'work_percentage': (
+                (self.total_work_steps/self.total_work_target) if self.total_work_target != 0 else 0
+            ) * 100.0
+        })
         
+        # envia señales solo en casos de cambio
+        if (self.something_working and not one_working):
+            self.something_working = one_working
+            self.total_work_steps = 0;
+            self.total_work_target = 0;
+            
+            for cll in self.on_every_work_ended:
+                cll()
+        
+        self.something_working = one_working
     
     def __local_stepper_step(self, part_id: str, stepper: Stepper, steps: int):
         part_info = self.__parts_initializer.parts[part_id];
         low_limit = part_info['low_limit'];
         high_limit = part_info['high_limit'];
+        
+        
+        self.total_work_steps += abs(steps);
+        self.__check_work_status()
         
         value_percentage = (stepper.steps/(high_limit - low_limit)) * 100;
         self.__states[part_id] = {
@@ -75,6 +114,9 @@ class StatesHandler():
             'realValue': 0 if (value_percentage < 0) else (100 if (value_percentage > 100) else value_percentage)
         }
         self.__state_updated(part_id, self.__states[part_id])
+        
+        for cll in self.on_stepper_update:
+            cll(stepper, steps)
     
     def __state_updated(self, part_id: str, state: dict):
         Socket.emit('stateUpdated', {

@@ -8,7 +8,7 @@ import time
 global steppers
 steppers = {}
 global steppers_working
-steppers_working = []
+steppers_working: list = []
 global servos
 servos = {}
 
@@ -226,7 +226,7 @@ class Stepper:
 
     ready: bool = False
 
-    __last_target_steps = 0
+    last_target_steps = 0
 
     arduino: Arduino = None
     __arduino_id = 0
@@ -310,6 +310,7 @@ class Stepper:
             steppers_working.append(self)
 
         # self.arduino.digital_write(self.__enable_pin, False)
+        self.__on_step(0);
 
         # Convertir pasos a string con formato para payload
         steps = str(int(steps)).zfill(5)
@@ -320,7 +321,7 @@ class Stepper:
         self.arduino.send_payload(payload)
 
     def go_to(self, target: int):
-        self.__last_target_steps = target
+        self.last_target_steps = target
         if (self.working):
             self.interrupt()
             return
@@ -329,7 +330,7 @@ class Stepper:
         self.step(distanceSteps)
 
     def disable(self):
-        # if (len(steppers_working) <= 0):
+        #if (len(steppers_working) <= 0):
         #self.arduino.digital_write(self.__enable_pin, True)
         pass
 
@@ -385,13 +386,12 @@ class Stepper:
             cll(self, steps)
 
     def __ensure_target(self):
-        if not (self.steps == self.__last_target_steps):
-            self.go_to(self.__last_target_steps)
+        if not (self.steps == self.last_target_steps):
+            self.go_to(self.last_target_steps)
 
     def __check_disable(self):
-        pass
-        # if (self in steppers_working):
-        #    steppers_working.remove(self)
+        if (self in steppers_working):
+            steppers_working.remove(self)
 
         # if (len(steppers_working) <= 0):
         #    self.arduino.digital_write(self.__enable_pin, True)

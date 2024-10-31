@@ -9,9 +9,19 @@ class GlobalConfig:
     # Permite compatibilidad de ejecucion con sistemas windows
     debug_mode = config("WINDOWS_DEBUGING").lower() == "true"
 
-    admin_users = {
-        "zau1": "231551244",
-        "maxo": "toya300"
+    admin_sequence = {
+        'sequence':[
+            ' ',
+            'up',
+            'up',
+            'down',
+            'right',
+            'left',
+            'left',
+            'up',
+            'right',
+            'up',
+        ]
     }
     
     animations_file = 'animations.json'

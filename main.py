@@ -4,7 +4,7 @@ from config import GlobalConfig
 from threading import Timer
 from web_socket import Socket
 from states_handler import StatesHandler
-from animator import Animator
+from animator import AnimatonsHelper, Animator
 import time
 import math
 
@@ -23,6 +23,7 @@ class LogicThread():
 
         self.states_handler = StatesHandler(self.master)
         self.animator = Animator(self.states_handler)
+        
         Socket.on('stateUpdated', self.states_handler.apply_single_state);
         
 
