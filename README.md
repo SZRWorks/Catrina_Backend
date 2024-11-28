@@ -1,3 +1,3 @@
-# FokinCatrina_Back-End
+# Catrina_Back-End
 
-Max sigue siendo puto
+Lado del servidor encargado de ejecuciones logicas generales
